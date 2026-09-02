@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Klassen-Dobble mit Leveln</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .card {
+            width: 270px;
+            height: 270px;
+            background: white;
+            border: 4px dashed #94a3b8;
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            margin: auto;
+        }
+        @media (min-height: 700px) and (min-width: 600px) {
+            .card {
+                width: 340px;
+                height: 340px;
+            }
+        }
+        .sym {
+            position: absolute;
+            line-height: 1;
+            width: 18mm;
+            height: 18mm;
+            text-align: center;
+            margin-left: -9mm;
+            margin-top: -9mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .highlight {
+            background-color: rgba(239, 68, 68, 0.2);
+            border: 4px solid #ef4444;
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+            transform: scale(1.15) !important;
+            z-index: 20;
+        }
+        /* Landscape layout adjustments */
+        @media (orientation: landscape) and (min-width: 768px) {
+            .game-container {
+                flex-direction: row !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 h-screen w-screen flex flex-col justify-between p-3 overflow-hidden font-sans">
+
+    <!-- Header & Level Selection -->
+    <header class="text-center pt-1">
+        <h1 class="text-xl font-bold text-slate-800">Klassen-Dobble</h1>
+        <div class="flex justify-center gap-2 mt-2">
+            <button onclick="setLevel(1)" id="btn-lvl1" class="px-3 py-1 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow">Level 1 (5 Symbole)</button>
+            <button onclick="setLevel(2)" id="btn-lvl2" class="px-3 py-1 text-xs font-bold rounded-lg transition bg-slate-200 text-slate-700">Level 2 (9 Symbole)</button>
+            <button onclick="setLevel(3)" id="btn-lvl3" class="px-3 py-1 text-xs font-bold rounded-lg transition bg-slate-200 text-slate-700">Level 3 (12 Symbole)</button>
+        </div>
+    </header>
+
+    <!-- Game Area: Stacked in portrait, side-by-side in landscape -->
+    <main class="game-container flex flex-col items-center justify-center gap-4 my-auto w-full max-w-5xl mx-auto">
+        <div class="flex flex-col items-center">
+            <div id="card1" class="card"></div>
+        </div>
+        <div class="flex flex-col items-center">
+            <div id="card2" class="card"></div>
+        </div>
+    </main>
+
+    <!-- Controls at the bottom -->
+    <footer class="flex flex-col gap-2 items-center pb-2 w-full max-w-md mx-auto">
+        <div class="flex gap-4 w-full px-4">
+            <button onclick="nextRound()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg text-base transition transform active:scale-95 cursor-pointer">
+                Nächste Karten 🔄
+            </button>
+            <button onclick="showSolution()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg text-base transition transform active:scale-95 cursor-pointer">
+                Auflösen ✨
+            </button>
+        </div>
+        <div id="info-text" class="text-xs text-slate-400 text-center">
+            Level 1: 21 Karten (5 Symbole pro Karte - Garantiert exakt 1 Treffer)
+        </div>
+    </footer>
+
+    <script>
+
+        // ============================================================
+        // Alle drei Kartensätze sind mathematisch korrekte projektive
+        // Ebenen (PG(2,q)), fest vorberechnet - keine Laufzeit-Generierung.
+        // Jedes Kartenpaar hat garantiert GENAU EIN gemeinsames Symbol.
+        //
+        // Level 1: Ordnung q=4  -> 5 Symbole/Karte,  21 Karten, 21 Symbole
+        // Level 2: Ordnung q=8  -> 9 Symbole/Karte,  73 Karten, 73 Symbole
+        // Level 3: Ordnung q=11 -> 12 Symbole/Karte, 133 Karten, 133 Symbole
+        //
+        // Hinweis: 13 Symbole/Karte (Ordnung 12) sind mathematisch NICHT
+        // realisierbar - die Existenz einer projektiven Ebene der Ordnung
+        // 12 ist ein bis heute ungelöstes Problem der Kombinatorik.
+        // Deshalb wurde Level 3 auf 12 Symbole (Ordnung 11, Primzahl)
+        // festgelegt.
+        //
+        // Generiert per GF(q)-Konstruktion und vollständig verifiziert:
+        // jedes Kartenpaar wurde auf exakt 1 gemeinsames Symbol geprüft,
+        // jede Karte auf interne Duplikate.
+        // ============================================================
+
+const cardsLvl1 = [
+            ["🍎", "🍌", "🫐", "🥭", "🥑"],
+            ["🍏", "🍌", "🍉", "🍇", "🍓"],
+            ["🍐", "🍌", "🍈", "🥥", "🥒"],
+            ["🍋", "🍌", "🍑", "🍍", "🥬"],
+            ["🍊", "🍌", "🍒", "🍅", "🥦"],
+            ["🍏", "🍎", "🍐", "🍊", "🍋"],
+            ["🍎", "🍉", "🍈", "🍍", "🥦"],
+            ["🍎", "🍓", "🍑", "🍅", "🥒"],
+            ["🍎", "🍇", "🍒", "🥥", "🥬"],
+            ["🍏", "🫐", "🍈", "🍒", "🍑"],
+            ["🍐", "🍉", "🫐", "🍅", "🥬"],
+            ["🍋", "🍓", "🫐", "🥥", "🥦"],
+            ["🍊", "🍇", "🫐", "🍍", "🥒"],
+            ["🍏", "🥑", "🥦", "🥬", "🥒"],
+            ["🍊", "🍉", "🍑", "🥥", "🥑"],
+            ["🍐", "🍓", "🍒", "🍍", "🥑"],
+            ["🍋", "🍇", "🍈", "🍅", "🥑"],
+            ["🍏", "🥭", "🍍", "🥥", "🍅"],
+            ["🍋", "🍉", "🍒", "🥭", "🥒"],
+            ["🍊", "🍓", "🍈", "🥭", "🥬"],
+            ["🍐", "🍇", "🍑", "🥭", "🥦"],
+        ];
+
+const cardsLvl2 = [
+            ["🫑", "🍆", "🧈", "🍟", "🍝", "🍚", "🍰", "🥛", "🐭"],
+            ["🌶️", "🍆", "🥐", "🥯", "🍞", "🥖", "🥨", "🧀", "🥚"],
+            ["🌽", "🍆", "🥞", "🥪", "🍛", "🍨", "🍮", "🐶", "🐯"],
+            ["🧅", "🍆", "🍖", "🍕", "🍣", "🍘", "🍪", "🧃", "🐨"],
+            ["🥔", "🍆", "🌭", "🥘", "🍜", "🍦", "🍬", "🍵", "🐻"],
+            ["🍠", "🍆", "🍔", "🥙", "🍲", "🍙", "🍯", "🥤", "🦊"],
+            ["🥕", "🍆", "🧇", "🌯", "🥟", "🍧", "🎂", "🐱", "🐼"],
+            ["🫒", "🍆", "🥓", "🧆", "🍱", "🧁", "🍭", "☕", "🐰"],
+            ["🧄", "🍆", "🍗", "🌮", "🍤", "🥧", "🍫", "🧋", "🐹"],
+            ["🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠"],
+            ["🫑", "🥐", "🥞", "🍕", "🍜", "🍙", "🎂", "☕", "🐹"],
+            ["🫑", "🥨", "🍖", "🥙", "🍱", "🍦", "🍮", "🧋", "🐼"],
+            ["🫑", "🧀", "🌭", "🧆", "🥟", "🥧", "🍯", "🐶", "🐨"],
+            ["🫑", "🥚", "🍔", "🥘", "🍤", "🧁", "🍪", "🐱", "🐯"],
+            ["🫑", "🥯", "🧇", "🥪", "🍲", "🍘", "🍫", "🍵", "🐰"],
+            ["🫑", "🍞", "🥓", "🌮", "🍛", "🍧", "🍬", "🧃", "🦊"],
+            ["🫑", "🥖", "🍗", "🌯", "🍣", "🍨", "🍭", "🥤", "🐻"],
+            ["🌶️", "🧈", "🥞", "🧇", "🥓", "🍗", "🍖", "🌭", "🍔"],
+            ["🌽", "🥐", "🧈", "🌮", "🍲", "🍦", "🍭", "🐱", "🐨"],
+            ["🧅", "🥨", "🧈", "🌯", "🍜", "🧁", "🍫", "🐶", "🦊"],
+            ["🥔", "🧀", "🧈", "🍕", "🍤", "🍧", "🍮", "🥤", "🐰"],
+            ["🍠", "🥚", "🧈", "🥪", "🍱", "🥧", "🎂", "🧃", "🐻"],
+            ["🥕", "🥯", "🧈", "🧆", "🍣", "🍙", "🍬", "🧋", "🐯"],
+            ["🫒", "🍞", "🧈", "🥙", "🥟", "🍨", "🍪", "🍵", "🐹"],
+            ["🧄", "🥖", "🧈", "🥘", "🍛", "🍘", "🍯", "☕", "🐼"],
+            ["🌶️", "🍰", "🎂", "🍫", "🍬", "🍭", "🍮", "🍯", "🍪"],
+            ["🥕", "🥐", "🥓", "🥙", "🍤", "🍘", "🍰", "🐶", "🐻"],
+            ["🌽", "🥨", "🍗", "🥘", "🥟", "🍙", "🍰", "🧃", "🐰"],
+            ["🍠", "🧀", "🥞", "🌮", "🍣", "🧁", "🍰", "🍵", "🐼"],
+            ["🧅", "🥚", "🧇", "🧆", "🍛", "🍦", "🍰", "🥤", "🐹"],
+            ["🧄", "🥯", "🌭", "🍕", "🍱", "🍨", "🍰", "🐱", "🦊"],
+            ["🥔", "🍞", "🍖", "🌯", "🍲", "🥧", "🍰", "☕", "🐯"],
+            ["🫒", "🥖", "🍔", "🥪", "🍜", "🍧", "🍰", "🧋", "🐨"],
+            ["🌶️", "🥛", "☕", "🍵", "🧃", "🥤", "🧋", "🐶", "🐱"],
+            ["🫒", "🥐", "🧇", "🥘", "🍣", "🥧", "🍮", "🥛", "🦊"],
+            ["🧄", "🥨", "🥞", "🧆", "🍲", "🍧", "🍪", "🥛", "🐻"],
+            ["🌽", "🧀", "🍔", "🌯", "🍱", "🍘", "🍬", "🥛", "🐹"],
+            ["🥕", "🥚", "🍖", "🌮", "🍜", "🍨", "🍯", "🥛", "🐰"],
+            ["🥔", "🥯", "🍗", "🥙", "🍛", "🧁", "🎂", "🥛", "🐨"],
+            ["🧅", "🍞", "🌭", "🥪", "🍤", "🍙", "🍭", "🥛", "🐼"],
+            ["🍠", "🥖", "🥓", "🍕", "🥟", "🍦", "🍫", "🥛", "🐯"],
+            ["🌶️", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯"],
+            ["🧄", "🥐", "🍖", "🥪", "🥟", "🧁", "🍬", "🥤", "🐭"],
+            ["🥕", "🥨", "🍔", "🍕", "🍛", "🥧", "🍭", "🍵", "🐭"],
+            ["🧅", "🧀", "🥓", "🥘", "🍲", "🍨", "🎂", "🧋", "🐭"],
+            ["🌽", "🥚", "🌭", "🥙", "🍣", "🍧", "🍫", "☕", "🐭"],
+            ["🫒", "🥯", "🥞", "🌯", "🍤", "🍦", "🍯", "🧃", "🐭"],
+            ["🍠", "🍞", "🍗", "🧆", "🍜", "🍘", "🍮", "🐱", "🐭"],
+            ["🥔", "🥖", "🧇", "🌮", "🍱", "🍙", "🍪", "🐶", "🐭"],
+            ["🌶️", "🍟", "🍕", "🥪", "🌮", "🌯", "🥙", "🧆", "🥘"],
+            ["🧅", "🥐", "🍗", "🍟", "🍱", "🍧", "🍯", "🍵", "🐯"],
+            ["🍠", "🥨", "🧇", "🍟", "🍤", "🍨", "🍬", "☕", "🐨"],
+            ["🫒", "🧀", "🍖", "🍟", "🍛", "🍙", "🍫", "🐱", "🐻"],
+            ["🥔", "🥚", "🥞", "🍟", "🥟", "🍘", "🍭", "🧋", "🦊"],
+            ["🌽", "🥯", "🥓", "🍟", "🍜", "🥧", "🍪", "🥤", "🐼"],
+            ["🧄", "🍞", "🍔", "🍟", "🍣", "🍦", "🎂", "🐶", "🐰"],
+            ["🥕", "🥖", "🌭", "🍟", "🍲", "🧁", "🍮", "🧃", "🐹"],
+            ["🌶️", "🍝", "🍜", "🍲", "🍛", "🍣", "🍱", "🥟", "🍤"],
+            ["🥔", "🥐", "🍔", "🧆", "🍝", "🍨", "🍫", "🧃", "🐼"],
+            ["🫒", "🥨", "🌭", "🌮", "🍝", "🍘", "🎂", "🥤", "🐯"],
+            ["🥕", "🧀", "🍗", "🥪", "🍝", "🍦", "🍪", "☕", "🦊"],
+            ["🧄", "🥚", "🥓", "🌯", "🍝", "🍙", "🍮", "🍵", "🐨"],
+            ["🍠", "🥯", "🍖", "🥘", "🍝", "🍧", "🍭", "🐶", "🐹"],
+            ["🌽", "🍞", "🧇", "🍕", "🍝", "🧁", "🍯", "🧋", "🐻"],
+            ["🧅", "🥖", "🥞", "🥙", "🍝", "🥧", "🍬", "🐱", "🐰"],
+            ["🌶️", "🍚", "🍙", "🍘", "🍧", "🍨", "🍦", "🥧", "🧁"],
+            ["🍠", "🥐", "🌭", "🌯", "🍛", "🍚", "🍪", "🧋", "🐰"],
+            ["🥔", "🥨", "🥓", "🥪", "🍣", "🍚", "🍯", "🐱", "🐹"],
+            ["🧄", "🧀", "🧇", "🥙", "🍜", "🍚", "🍭", "🧃", "🐯"],
+            ["🫒", "🥚", "🍗", "🍕", "🍲", "🍚", "🍬", "🐶", "🐼"],
+            ["🧅", "🥯", "🍔", "🌮", "🥟", "🍚", "🍮", "☕", "🐻"],
+            ["🥕", "🍞", "🥞", "🥘", "🍱", "🍚", "🍫", "🥤", "🐨"],
+            ["🌽", "🥖", "🍖", "🧆", "🍤", "🍚", "🎂", "🍵", "🦊"],
+        ];
+
+const cardsLvl3 = [
+            ["🐮", "🦇", "🐢", "🦏", "🦀", "⚾", "🏑", "🛼", "🚑", "🚇", "⛈️", "✨"],
+            ["🦁", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛", "🦋", "🐌", "🐞", "🐜"],
+            ["🦉", "🦇", "🐘", "🦑", "⚽", "🪀", "🏹", "🚕", "🚜", "🚀", "☃️", "☄️"],
+            ["🐧", "🦇", "🐖", "🦐", "🐳", "🏸", "🥅", "🚎", "🚐", "🚢", "❄️", "🏆"],
+            ["🐤", "🦇", "🐐", "🦔", "🏈", "🎱", "🏏", "🏎️", "🛵", "🚊", "🌙", "🎉"],
+            ["🦆", "🦇", "🐪", "🦩", "🐟", "🏒", "🎣", "🚗", "🚒", "⛅", "🌊", "🎈"],
+            ["🐸", "🦇", "🦎", "🦃", "🦈", "🏓", "🛹", "🛷", "🚚", "⛵", "🔥", "🎸"],
+            ["🦅", "🦇", "🦒", "🦜", "🐋", "🏐", "🥍", "🚓", "🛴", "🚤", "☁️", "🪐"],
+            ["🐵", "🦇", "🦂", "🦚", "🏀", "🥎", "⛳", "🚌", "🚆", "✈️", "🌪️", "🎪"],
+            ["🐔", "🦇", "🐄", "🐙", "🐡", "🥏", "🥋", "⛸️", "🏍️", "🌧️", "🌈", "🎨"],
+            ["🐦", "🦇", "🐑", "🐁", "🐊", "🎾", "🤿", "🥌", "🚂", "🚁", "🌟", "🎁"],
+            ["🐷", "🦇", "🐍", "🐇", "🐬", "🏉", "🪁", "🚙", "🚲", "☀️", "⭐", "🎹"],
+            ["🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆", "🦅", "🦉"],
+            ["🐮", "🐜", "🐘", "🦐", "🏈", "🏒", "🛹", "🚓", "🚆", "🌧️", "🌟", "🎹"],
+            ["🐮", "🐝", "🐖", "🦩", "🐋", "🥏", "🪁", "🚕", "🛵", "⛵", "🌪️", "🎁"],
+            ["🐮", "🦋", "🐐", "🦜", "🐊", "🪀", "🎣", "🚌", "🚲", "🚢", "🔥", "🎨"],
+            ["🐮", "🐌", "🐪", "🐙", "⚽", "🏓", "🤿", "🚎", "🛴", "☀️", "🌙", "🎪"],
+            ["🐮", "🐗", "🦎", "🐇", "🐟", "🎾", "🏏", "⛸️", "🚐", "✈️", "☃️", "🪐"],
+            ["🐮", "🐞", "🦒", "🦑", "🏀", "🏸", "🥋", "🏎️", "🚂", "⛅", "⭐", "🎸"],
+            ["🐮", "🐴", "🦂", "🦔", "🐬", "🏐", "🥅", "🥌", "🚚", "🚀", "🌈", "🎈"],
+            ["🐮", "🦄", "🐄", "🦃", "🐳", "🏉", "⛳", "🚗", "🚜", "🚁", "☁️", "🎉"],
+            ["🐮", "🐛", "🐑", "🦚", "🦈", "🎱", "🏹", "🚙", "🏍️", "🚤", "🌊", "🏆"],
+            ["🐮", "🐺", "🐍", "🐁", "🐡", "🥎", "🥍", "🛷", "🚒", "🚊", "❄️", "☄️"],
+            ["🦁", "✨", "☄️", "🪐", "🎈", "🎉", "🎁", "🏆", "🎨", "🎪", "🎸", "🎹"],
+            ["🦉", "🐜", "🦒", "🐙", "🐊", "🎱", "🪁", "🚗", "🚚", "✈️", "❄️", "✨"],
+            ["🐧", "🐝", "🐘", "🦃", "🏀", "🏐", "🤿", "⛸️", "🚲", "🚊", "🌊", "✨"],
+            ["🐤", "🦋", "🦂", "🦐", "🦈", "🎾", "🥋", "🚕", "🚒", "☀️", "☁️", "✨"],
+            ["🦆", "🐌", "🐖", "🐇", "🏈", "🪀", "⛳", "🛷", "🚂", "🚤", "🌈", "✨"],
+            ["🐸", "🐗", "🐄", "🦚", "⚽", "🏒", "🥍", "🥌", "🛵", "🚢", "⭐", "✨"],
+            ["🦅", "🐞", "🐐", "🦩", "🐬", "🥎", "🛹", "🚎", "🏍️", "🚁", "☃️", "✨"],
+            ["🐵", "🐴", "🐑", "🦑", "🐡", "🏉", "🎣", "🚓", "🚐", "⛵", "🌙", "✨"],
+            ["🐔", "🦄", "🐪", "🐁", "🐋", "🏸", "🏏", "🚙", "🚆", "🚀", "🔥", "✨"],
+            ["🐦", "🐛", "🐍", "🦜", "🐟", "🏓", "🥅", "🏎️", "🚜", "🌧️", "🌪️", "✨"],
+            ["🐷", "🐺", "🦎", "🦔", "🐳", "🥏", "🏹", "🚌", "🛴", "⛅", "🌟", "✨"],
+            ["🦁", "🏑", "🥍", "🏏", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥋", "🛹"],
+            ["🦅", "🐜", "🐪", "🦚", "🐳", "🎾", "🏑", "🏎️", "🚲", "⛵", "🌈", "☄️"],
+            ["🦉", "🐝", "🐄", "🦔", "🐟", "🥎", "🏑", "🚓", "🚂", "☀️", "🔥", "🏆"],
+            ["🐵", "🦋", "🐘", "🐇", "🐋", "🏓", "🏑", "🥌", "🏍️", "⛅", "❄️", "🎉"],
+            ["🐧", "🐌", "🦎", "🦜", "🐡", "🎱", "🏑", "🚕", "🚆", "🚁", "⭐", "🎈"],
+            ["🐔", "🐗", "🐑", "🦐", "🐬", "🪀", "🏑", "🚗", "🛴", "🚊", "🌪️", "🎸"],
+            ["🐤", "🐞", "🐖", "🐁", "⚽", "🏉", "🏑", "🚌", "🚚", "🌧️", "🌊", "🪐"],
+            ["🐦", "🐴", "🦒", "🦃", "🏈", "🥏", "🏑", "🚙", "🚒", "🚢", "☃️", "🎪"],
+            ["🦆", "🦄", "🐍", "🦑", "🦈", "🏐", "🏑", "🚎", "🛵", "✈️", "🌟", "🎨"],
+            ["🐷", "🐛", "🐐", "🐙", "🏀", "🏒", "🏑", "🛷", "🚐", "🚀", "☁️", "🎁"],
+            ["🐸", "🐺", "🦂", "🦩", "🐊", "🏸", "🏑", "⛸️", "🚜", "🚤", "🌙", "🎹"],
+            ["🦁", "🚑", "🚒", "🚐", "🚚", "🚜", "🛵", "🏍️", "🚲", "🛴", "🚂", "🚆"],
+            ["🦆", "🐜", "🐐", "🦃", "🐡", "🏸", "🏹", "🥌", "🚑", "☀️", "🌪️", "🪐"],
+            ["🐔", "🐝", "🦒", "🐇", "🦈", "🏒", "🥅", "🚌", "🚑", "🚁", "🌙", "☄️"],
+            ["🦉", "🦋", "🐑", "🦩", "🐳", "🏐", "🏏", "🛷", "🚑", "🌧️", "⭐", "🎪"],
+            ["🐸", "🐌", "🐘", "🐁", "🐬", "🥏", "🎣", "🏎️", "🚑", "✈️", "☁️", "🏆"],
+            ["🐦", "🐗", "🐪", "🦔", "🏀", "🏉", "🛹", "🚕", "🚑", "🚤", "❄️", "🎨"],
+            ["🐧", "🐞", "🦂", "🐙", "🐟", "🪀", "🥍", "🚙", "🚑", "⛵", "🌟", "🎉"],
+            ["🦅", "🐴", "🐍", "🦐", "⚽", "🎱", "⛳", "⛸️", "🚑", "⛅", "🔥", "🎁"],
+            ["🐷", "🦄", "🐖", "🦚", "🐊", "🏓", "🥋", "🚓", "🚑", "🚊", "☃️", "🎈"],
+            ["🐤", "🐛", "🦎", "🦑", "🐋", "🥎", "🤿", "🚗", "🚑", "🚢", "🌈", "🎹"],
+            ["🐵", "🐺", "🐄", "🦜", "🏈", "🎾", "🪁", "🚎", "🚑", "🚀", "🌊", "🎸"],
+            ["🦁", "🚇", "🚊", "✈️", "🚀", "🚁", "⛵", "🚤", "🚢", "☀️", "⛅", "🌧️"],
+            ["🐤", "🐜", "🐑", "🐇", "🏀", "🥏", "🥍", "🚎", "🚜", "🚇", "🔥", "🎈"],
+            ["🦅", "🐝", "🦂", "🐁", "🏈", "🏓", "🏹", "🚗", "🚐", "🚇", "⭐", "🎨"],
+            ["🐦", "🦋", "🦎", "🐙", "🐬", "🏸", "⛳", "🚓", "🛵", "🚇", "🌊", "☄️"],
+            ["🦉", "🐌", "🐐", "🦚", "🐋", "🏉", "🥅", "⛸️", "🚒", "🚇", "🌟", "🎸"],
+            ["🦆", "🐗", "🐘", "🦜", "🐳", "🥎", "🥋", "🚙", "🚚", "🚇", "🌙", "🎁"],
+            ["🐵", "🐞", "🐍", "🦃", "🐊", "🏒", "🏏", "🚕", "🛴", "🚇", "🌈", "🏆"],
+            ["🐷", "🐴", "🐄", "🦩", "🦈", "🪀", "🤿", "🏎️", "🚆", "🚇", "❄️", "🪐"],
+            ["🐧", "🦄", "🦒", "🦔", "⚽", "🎾", "🎣", "🛷", "🏍️", "🚇", "🌪️", "🎹"],
+            ["🐸", "🐛", "🐪", "🦐", "🐡", "🏐", "🪁", "🚌", "🚂", "🚇", "☃️", "🎉"],
+            ["🐔", "🐺", "🐖", "🦑", "🐟", "🎱", "🛹", "🥌", "🚲", "🚇", "☁️", "🎪"],
+            ["🦁", "🦏", "🐁", "🐇", "🦔", "🦃", "🦩", "🦚", "🦜", "🐙", "🦑", "🦐"],
+            ["🐦", "🐜", "🐖", "🦏", "🦈", "🥎", "🎣", "⛸️", "🛴", "🚀", "⭐", "🎉"],
+            ["🐵", "🐝", "🐪", "🦏", "🐬", "🎱", "🥋", "🛷", "🚜", "🚢", "🌟", "🪐"],
+            ["🐸", "🦋", "🦒", "🦏", "🐟", "🏉", "🏹", "🚎", "🚆", "🚊", "🌈", "🎁"],
+            ["🐤", "🐌", "🐄", "🦏", "🐊", "🏐", "🛹", "🚙", "🚐", "⛅", "🌪️", "☄️"],
+            ["🦉", "🐗", "🐍", "🦏", "🏈", "🏸", "🤿", "🚌", "🏍️", "⛵", "☁️", "🎈"],
+            ["🐷", "🐞", "🐘", "🦏", "🐡", "🎾", "🥅", "🚗", "🛵", "🚤", "🔥", "🎪"],
+            ["🐔", "🐴", "🐐", "🦏", "🐳", "🏓", "🥍", "🚕", "🚂", "✈️", "🌊", "🎹"],
+            ["🦅", "🦄", "🦎", "🦏", "🏀", "🪀", "🪁", "🥌", "🚒", "🌧️", "🌙", "🏆"],
+            ["🦆", "🐛", "🦂", "🦏", "⚽", "🥏", "🏏", "🚓", "🚲", "🚁", "❄️", "🎸"],
+            ["🐧", "🐺", "🐑", "🦏", "🐋", "🏒", "⛳", "🏎️", "🚚", "☀️", "☃️", "🎨"],
+            ["🦁", "⛈️", "❄️", "☃️", "🌈", "☁️", "🌪️", "🌊", "🔥", "🌙", "⭐", "🌟"],
+            ["🐧", "🐜", "🐄", "🦑", "🐬", "🏓", "🏏", "🚌", "🚒", "🚤", "⛈️", "🎁"],
+            ["🦆", "🐝", "🦎", "🦐", "🐊", "🏉", "🥍", "🏎️", "🏍️", "🚀", "⛈️", "🎪"],
+            ["🦅", "🦋", "🐖", "🦔", "🐡", "🏒", "🤿", "🚙", "🚜", "✈️", "⛈️", "🎸"],
+            ["🐔", "🐌", "🐍", "🦩", "🏀", "🎾", "🏹", "🚓", "🚚", "🚢", "⛈️", "🎉"],
+            ["🐷", "🐗", "🦂", "🦃", "🐋", "🎱", "🎣", "🚎", "🚂", "🌧️", "⛈️", "☄️"],
+            ["🦉", "🐞", "🐪", "🦜", "🦈", "🥏", "⛳", "🥌", "🚐", "🚊", "⛈️", "🎹"],
+            ["🐤", "🐴", "🐘", "🦚", "🐟", "🏸", "🪁", "🛷", "🛴", "🚁", "⛈️", "🎨"],
+            ["🐸", "🦄", "🐑", "🐙", "🏈", "🥎", "🥅", "🚕", "🚲", "⛅", "⛈️", "🪐"],
+            ["🐵", "🐛", "🦒", "🐁", "🐳", "🪀", "🛹", "⛸️", "🛵", "☀️", "⛈️", "🎈"],
+            ["🐦", "🐺", "🐐", "🐇", "⚽", "🏐", "🥋", "🚗", "🚆", "⛵", "⛈️", "🏆"],
+            ["🦁", "🦀", "🐡", "🐟", "🐬", "🐳", "🐋", "🦈", "🐊", "⚽", "🏀", "🏈"],
+            ["🐔", "🐜", "🦂", "🦜", "🦀", "🏉", "🤿", "🛷", "🛵", "⛅", "☃️", "🏆"],
+            ["🐸", "🐝", "🐐", "🦑", "🦀", "🎾", "⛳", "🚙", "🛴", "🌧️", "❄️", "🎈"],
+            ["🐧", "🦋", "🐍", "🦚", "🦀", "🥏", "🛹", "🚗", "🚂", "🚀", "🌙", "🪐"],
+            ["🐷", "🐌", "🦒", "🦐", "🦀", "🥎", "🏏", "🥌", "🚜", "⛵", "🌊", "🎨"],
+            ["🐵", "🐗", "🐖", "🐙", "🦀", "🏐", "🏹", "🏎️", "🚒", "🚁", "🔥", "🎹"],
+            ["🦆", "🐞", "🐑", "🦔", "🦀", "🏓", "🪁", "⛸️", "🚆", "🚢", "☁️", "☄️"],
+            ["🦉", "🐴", "🦎", "🐁", "🦀", "🏒", "🥋", "🚎", "🚲", "🚤", "🌪️", "🎉"],
+            ["🐦", "🦄", "🐘", "🦩", "🦀", "🎱", "🥍", "🚌", "🚐", "☀️", "🌈", "🎸"],
+            ["🦅", "🐛", "🐄", "🐇", "🦀", "🏸", "🎣", "🚕", "🚚", "🚊", "🌟", "🎪"],
+            ["🐤", "🐺", "🐪", "🦃", "🦀", "🪀", "🥅", "🚓", "🏍️", "✈️", "⭐", "🎁"],
+            ["🦁", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒"],
+            ["🐵", "🐜", "🦎", "🦩", "⚽", "⚾", "🥅", "🚙", "🚂", "🚊", "☁️", "🎨"],
+            ["🐤", "🐝", "🐍", "🐙", "🐳", "⚾", "🎣", "🥌", "🚆", "🚤", "☃️", "🎸"],
+            ["🐷", "🦋", "🐪", "🦑", "🏈", "⚾", "🥍", "⛸️", "🚚", "🚁", "🌪️", "🏆"],
+            ["🦅", "🐌", "🐑", "🦃", "🐟", "⚾", "🥋", "🚌", "🛵", "🚀", "❄️", "🎹"],
+            ["🐧", "🐗", "🐐", "🐁", "🦈", "⚾", "🪁", "🚓", "🚜", "⛅", "🌈", "🎪"],
+            ["🐦", "🐞", "🐄", "🦐", "🐋", "⚾", "🏹", "🛷", "🚲", "✈️", "🌙", "🎈"],
+            ["🐸", "🐴", "🐖", "🦜", "🏀", "⚾", "🏏", "🚗", "🏍️", "☀️", "🌟", "☄️"],
+            ["🦉", "🦄", "🦂", "🐇", "🐡", "⚾", "🛹", "🏎️", "🛴", "🚢", "🌊", "🎁"],
+            ["🐔", "🐛", "🐘", "🦔", "🐊", "⚾", "⛳", "🚎", "🚒", "⛵", "⭐", "🪐"],
+            ["🦆", "🐺", "🦒", "🦚", "🐬", "⚾", "🤿", "🚕", "🚐", "🌧️", "🔥", "🎉"],
+            ["🦁", "🛼", "🛷", "⛸️", "🥌", "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓"],
+            ["🐸", "🐜", "🐍", "🦔", "🐋", "🪀", "🥋", "🛼", "🚐", "🚁", "🌊", "🎪"],
+            ["🐷", "🐝", "🐑", "🦜", "⚽", "🏸", "🛹", "🛼", "🚒", "✈️", "🌈", "🎉"],
+            ["🦆", "🦋", "🐄", "🐁", "🏀", "🎱", "🥅", "🛼", "🛴", "⛵", "☃️", "🎹"],
+            ["🐦", "🐌", "🦂", "🦑", "🐳", "🏒", "🪁", "🛼", "🏍️", "🚊", "🔥", "🪐"],
+            ["🐤", "🐗", "🦒", "🦩", "🐡", "🏓", "⛳", "🛼", "🚲", "🚀", "🌟", "🏆"],
+            ["🐔", "🐞", "🦎", "🦚", "🏈", "🏐", "🎣", "🛼", "🚜", "☀️", "❄️", "🎁"],
+            ["🐧", "🐴", "🐪", "🐇", "🐊", "🥎", "🏹", "🛼", "🛵", "🌧️", "☁️", "🎸"],
+            ["🐵", "🦄", "🐐", "🦐", "🐟", "🥏", "🤿", "🛼", "🚚", "🚤", "⭐", "☄️"],
+            ["🦉", "🐛", "🐖", "🦃", "🐬", "🎾", "🥍", "🛼", "🚆", "⛅", "🌙", "🎨"],
+            ["🦅", "🐺", "🐘", "🐙", "🦈", "🏉", "🏏", "🛼", "🚂", "🚢", "🌪️", "🎈"],
+            ["🦁", "🐢", "🐍", "🦎", "🦂", "🐄", "🐖", "🐑", "🐐", "🐪", "🦒", "🐘"],
+            ["🐷", "🐜", "🐢", "🐁", "🐟", "🏐", "⛳", "🚕", "🏍️", "🚢", "🌙", "🎸"],
+            ["🐦", "🐝", "🐢", "🦚", "🐡", "🪀", "🏏", "🚎", "🚚", "⛅", "☁️", "🎹"],
+            ["🐔", "🦋", "🐢", "🦃", "⚽", "🥎", "🪁", "🏎️", "🚐", "🚤", "🌟", "🎈"],
+            ["🐵", "🐌", "🐢", "🦔", "🦈", "🏸", "🥍", "🚗", "🚲", "🌧️", "☃️", "🎁"],
+            ["🦅", "🐗", "🐢", "🦑", "🐊", "🥏", "🥅", "🛷", "🚆", "☀️", "🌊", "🎉"],
+            ["🐸", "🐞", "🐢", "🐇", "🐳", "🎱", "🤿", "🚓", "🚒", "🚀", "🌪️", "🎨"],
+            ["🦆", "🐴", "🐢", "🐙", "🐋", "🎾", "🛹", "🚌", "🚜", "🚊", "⭐", "🏆"],
+            ["🐤", "🦄", "🐢", "🦜", "🐬", "🏒", "🏹", "⛸️", "🚂", "⛵", "❄️", "🎪"],
+            ["🐧", "🐛", "🐢", "🦩", "🏈", "🏉", "🥋", "🥌", "🛴", "✈️", "🔥", "☄️"],
+            ["🦉", "🐺", "🐢", "🦐", "🏀", "🏓", "🎣", "🚙", "🛵", "🚁", "🌈", "🪐"],
+        ];
+
+        let currentLevel = 1;
+        let activeCards = cardsLvl1;
+        let currentCard1Idx = 0;
+        let currentCard2Idx = 1;
+
+        let card1Angles = [];
+        let card2Angles = [];
+
+        function setLevel(lvl) {
+            currentLevel = lvl;
+            document.getElementById('btn-lvl1').className = lvl === 1 ? 'px-3 py-1 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow' : 'px-3 py-1 text-xs font-bold rounded-lg transition bg-slate-200 text-slate-700';
+            document.getElementById('btn-lvl2').className = lvl === 2 ? 'px-3 py-1 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow' : 'px-3 py-1 text-xs font-bold rounded-lg transition bg-slate-200 text-slate-700';
+            document.getElementById('btn-lvl3').className = lvl === 3 ? 'px-3 py-1 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow' : 'px-3 py-1 text-xs font-bold rounded-lg transition bg-slate-200 text-slate-700';
+
+            if (lvl === 1) {
+                activeCards = cardsLvl1;
+                document.getElementById('info-text').innerText = 'Level 1: 21 Karten (5 Symbole pro Karte - Garantiert exakt 1 Treffer)';
+            } else if (lvl === 2) {
+                activeCards = cardsLvl2;
+                document.getElementById('info-text').innerText = 'Level 2: 73 Karten (9 Symbole pro Karte - Garantiert exakt 1 Treffer)';
+            } else if (lvl === 3) {
+                activeCards = cardsLvl3;
+                document.getElementById('info-text').innerText = 'Level 3: 133 Karten (12 Symbole pro Karte - Garantiert exakt 1 Treffer)';
+            }
+            nextRound();
+        }
+
+        function getRandomPair() {
+            if (activeCards.length < 2) return [0, 1];
+            let idx1 = Math.floor(Math.random() * activeCards.length);
+            let idx2;
+            do {
+                idx2 = Math.floor(Math.random() * activeCards.length);
+            } while (idx2 === idx1);
+            return [idx1, idx2];
+        }
+
+        function generateAngles(count) {
+            let angles = [];
+            let angleOffset = Math.random() * 360;
+            for (let i = 0; i < count; i++) {
+                const angle = angleOffset + (i * (360.0 / count)) - 90.0;
+                const rot = (angle + 90.0) % 360.0;
+                angles.push({ angle, rot });
+            }
+            return angles;
+        }
+
+        function renderCard(containerId, cardSymbols, angles, isSolution = false, commonSymbol = null) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            const rect = container.getBoundingClientRect();
+            const size = rect.width > 0 ? rect.width : 280;
+            const cx = size / 2;
+            const cy = size / 2;
+            const radius = size * 0.32;
+
+            const count = cardSymbols.length;
+
+            let baseFontSize = 2.5;
+            if (count >= 8 && count < 10) baseFontSize = 1.9;
+            else if (count >= 10 && count < 13) baseFontSize = 1.5;
+            else if (count >= 13) baseFontSize = 1.2;
+            const multipliedFontSize = baseFontSize * 1.75;
+
+            cardSymbols.forEach((sym, i) => {
+                const { angle, rot } = angles[i];
+                const rad = angle * (Math.PI / 180);
+                const x = cx + radius * Math.cos(rad);
+                const y = cy + radius * Math.sin(rad);
+
+                const div = document.createElement('div');
+                div.className = 'sym';
+                div.style.fontSize = `${multipliedFontSize}rem`;
+
+                div.style.left = `${x}px`;
+                div.style.top = `${y}px`;
+                div.style.transform = `rotate(${rot}deg)`;
+                div.innerText = sym;
+
+                if (isSolution && sym === commonSymbol) {
+                    div.classList.add('highlight');
+                }
+
+                container.appendChild(div);
+            });
+        }
+
+        function nextRound() {
+            const pair = getRandomPair();
+            currentCard1Idx = pair[0];
+            currentCard2Idx = pair[1];
+
+            card1Angles = generateAngles(activeCards[currentCard1Idx].length);
+            card2Angles = generateAngles(activeCards[currentCard2Idx].length);
+
+            renderCard('card1', activeCards[currentCard1Idx], card1Angles);
+            renderCard('card2', activeCards[currentCard2Idx], card2Angles);
+        }
+
+        function showSolution() {
+            const c1 = activeCards[currentCard1Idx];
+            const c2 = activeCards[currentCard2Idx];
+
+            const common = c1.find(s => c2.includes(s));
+
+            if (common) {
+                renderCard('card1', c1, card1Angles, true, common);
+                renderCard('card2', c2, card2Angles, true, common);
+            }
+        }
+
+        window.onload = function() {
+            nextRound();
+        };
+
+        window.onresize = function() {
+            if(card1Angles.length > 0 && card2Angles.length > 0) {
+                renderCard('card1', activeCards[currentCard1Idx], card1Angles);
+                renderCard('card2', activeCards[currentCard2Idx], card2Angles);
+            }
+        };
+    </script>
+</body>
+</html>

@@ -30,21 +30,17 @@
         .sym {
             position: absolute;
             line-height: 1;
-            width: 18mm;
-            height: 18mm;
-            text-align: center;
-            margin-left: -9mm;
-            margin-top: -9mm;
             display: flex;
             align-items: center;
             justify-content: center;
+            transform: translate(-50%, -50%);
         }
         .highlight {
             background-color: rgba(239, 68, 68, 0.2);
             border: 4px solid #ef4444;
             border-radius: 50%;
             box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
-            transform: scale(1.15) !important;
+            padding: 4px;
             z-index: 20;
         }
         /* Landscape layout adjustments */
@@ -68,7 +64,7 @@
     </header>
 
     <!-- Game Area: Stacked in portrait, side-by-side in landscape -->
-    <main class="game-container flex flex-col items-center justify-center gap-4 my-auto w-full max-w-5xl mx-auto">
+    <main class="game-container flex flex-col items-center justify-center gap-8 my-auto w-full max-w-5xl mx-auto">
         <div class="flex flex-col items-center">
             <div id="card1" class="card"></div>
         </div>
@@ -78,7 +74,7 @@
     </main>
 
     <!-- Controls at the bottom -->
-    <footer class="flex flex-col gap-2 items-center pb-2 w-full max-w-md mx-auto">
+    <footer class="flex flex-col gap-3 items-center pb-2 pt-4 mt-2 w-full max-w-md mx-auto border-t border-slate-200">
         <div class="flex gap-4 w-full px-4">
             <button onclick="nextRound()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg text-base transition transform active:scale-95 cursor-pointer">
                 Nächste Karten 🔄
@@ -355,8 +351,8 @@ const cardsLvl3 = [
         let currentCard1Idx = 0;
         let currentCard2Idx = 1;
 
-        let card1Angles = [];
-        let card2Angles = [];
+        let card1Layout = [];
+        let card2Layout = [];
 
         function setLevel(lvl) {
             currentLevel = lvl;
@@ -387,51 +383,174 @@ const cardsLvl3 = [
             return [idx1, idx2];
         }
 
-        function generateAngles(count) {
-            let angles = [];
-            let angleOffset = Math.random() * 360;
-            for (let i = 0; i < count; i++) {
-                const angle = angleOffset + (i * (360.0 / count)) - 90.0;
-                const rot = (angle + 90.0) % 360.0;
-                angles.push({ angle, rot });
-            }
-            return angles;
+        // ------------------------------------------------------------
+        // Verstreute Anordnung mit variablen Größen und Kollisionsvermeidung
+        // (klassischer Dobble-Look, statt Ring am Rand).
+        //
+        // Alle Maße werden relativ zur KLEINEREN Kartenbreite (270px,
+        // Standard-Breakpoint) berechnet. Die Schriftgröße ist in "rem"
+        // fest (skaliert nicht mit der Kartengröße), die Position wird
+        // aber als Bruchteil der aktuellen Kartenbreite gerendert - beim
+        // größeren Breakpoint (340px) wird dadurch automatisch mehr Platz
+        // zwischen den Symbolen frei, nie weniger. So bleibt die Anordnung
+        // auf jeder Bildschirmgröße überlappungsfrei.
+        // ------------------------------------------------------------
+        const REFERENCE_CARD_PX = 270;
+        const REM_TO_PX = 16;
+        const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ~137,5°
+        // Sicherheitsabstand zum ECHTEN Kartenrand (Kreis-Radius = 0.5 * Kartenbreite).
+        // Der Radius jedes Symbols wird von diesem Wert abgezogen (siehe allowedMaxR
+        // weiter unten), damit auch der sichtbare Rand des Emojis - nicht nur sein
+        // Mittelpunkt - innerhalb der Karte bleibt.
+        const SAFE_EDGE_R = 0.42;
+
+        function getBaseFontRem(count) {
+            if (count <= 5) return 3.4;
+            if (count <= 9) return 2.5;
+            return 2.0; // 10-13 Symbole
         }
 
-        function renderCard(containerId, cardSymbols, angles, isSolution = false, commonSymbol = null) {
+        function footprintFracFor(rem, paddingPx) {
+            const footprintPx = (rem * REM_TO_PX * 0.60) + paddingPx;
+            return footprintPx / REFERENCE_CARD_PX;
+        }
+
+        // Verstreute, aber GLEICHMÄSSIGE Platzierung:
+        // 1) Basis-Slots per Sonnenblumen-Verteilung (Vogel'sche Methode) - deckt die
+        //    Kreisfläche mathematisch gleichmäßig ab (kein Zufalls-Klumpen, keine Lücken).
+        // 2) Slots zufällig den Symbolen zugelost, damit Größe/Position nicht immer
+        //    gleich zusammenfallen.
+        // 3) Kollisionsvermeidung mit garantiertem Ergebnis: erst kleine Jitter-Suche
+        //    nah am zugewiesenen Slot (erhält die Gleichmäßigkeit), danach eine breite
+        //    Suche über die ganze Karte, zuletzt schrittweises Verkleinern - so bleibt
+        //    die Anordnung IMMER überlappungsfrei UND innerhalb des Rand-Sicherheitsabstands,
+        //    auch im ungünstigsten Fall.
+        function generateScatterLayout(count) {
+            const baseRem = getBaseFontRem(count);
+            const paddingPx = 5; // zusätzlicher Mindestabstand zwischen Symbolen
+            const minSizeMultiplier = 0.4; // nie kleiner als 40% der Ausgangsgröße
+
+            const items = [];
+            for (let i = 0; i < count; i++) {
+                const scale = 0.85 + Math.random() * 0.35; // 0.85 - 1.20 -> unterschiedliche Größen
+                const rem = baseRem * scale;
+                items.push({ origIndex: i, rem, footprintFrac: footprintFracFor(rem, paddingPx) });
+            }
+
+            // Slot-Radius bereits um eine typische Footprint-Schätzung reduziert,
+            // damit die Basis-Anordnung von Anfang an Rand-Sicherheitsabstand einplant.
+            const typicalFootprint = footprintFracFor(baseRem, paddingPx);
+            const slotMaxR = Math.max(0.1, SAFE_EDGE_R - typicalFootprint);
+            const rotationOffset = Math.random() * Math.PI * 2;
+            const slots = [];
+            for (let i = 0; i < count; i++) {
+                const idx = i + 0.5;
+                const r = slotMaxR * Math.sqrt(idx / count);
+                const theta = idx * GOLDEN_ANGLE + rotationOffset;
+                slots.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+            }
+            for (let i = slots.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [slots[i], slots[j]] = [slots[j], slots[i]];
+            }
+
+            // Größte zuerst platzieren -> bessere Packung bei Kollisionen
+            const order = [...items].sort((a, b) => b.footprintFrac - a.footprintFrac);
+            const placed = [];
+
+            order.forEach((item, orderIdx) => {
+                const slot = slots[orderIdx];
+                let finalPos = null, finalFrac = item.footprintFrac, finalRem = item.rem;
+
+                placementLoop:
+                for (let sizeStep = 0; sizeStep < 20; sizeStep++) {
+                    const sizeMultiplier = Math.max(minSizeMultiplier, Math.pow(0.88, sizeStep));
+                    const testFrac = item.footprintFrac * sizeMultiplier;
+                    // Erlaubter Maximalradius für DIESES Symbol - so bleibt sein
+                    // sichtbarer äußerer Rand innerhalb von SAFE_EDGE_R, egal wie groß es ist.
+                    const allowedMaxR = Math.max(0.05, SAFE_EDGE_R - testFrac);
+
+                    // Phase A: kleine Jitter-Suche nah am zugewiesenen Slot
+                    let bestPos = null, bestScore = -Infinity;
+                    const jitterRadii = [0.02, 0.05, 0.09, 0.14, 0.20];
+                    for (const jr of jitterRadii) {
+                        for (let a = 0; a < 40; a++) {
+                            const dx = (Math.random() * 2 - 1) * jr;
+                            const dy = (Math.random() * 2 - 1) * jr;
+                            const x = slot.x + dx, y = slot.y + dy;
+                            if (Math.hypot(x, y) > allowedMaxR) continue;
+                            let overlap = false, minMargin = Infinity;
+                            for (const p of placed) {
+                                const d = Math.hypot(x - p.x, y - p.y);
+                                const margin = d - (testFrac + p.footprintFrac);
+                                if (margin < 0) overlap = true;
+                                minMargin = Math.min(minMargin, margin);
+                            }
+                            if (!overlap) {
+                                finalPos = { x, y }; finalFrac = testFrac; finalRem = item.rem * sizeMultiplier;
+                                break placementLoop;
+                            }
+                            if (minMargin > bestScore) { bestScore = minMargin; bestPos = { x, y }; }
+                        }
+                    }
+                    // Phase B: breite Suche über die ganze Karte (Fallback), respektiert
+                    // ebenfalls den Rand-Sicherheitsabstand für dieses Symbol.
+                    for (let a = 0; a < 250; a++) {
+                        const r = Math.sqrt(Math.random()) * allowedMaxR;
+                        const theta = Math.random() * Math.PI * 2;
+                        const x = r * Math.cos(theta), y = r * Math.sin(theta);
+                        let overlap = false, minMargin = Infinity;
+                        for (const p of placed) {
+                            const d = Math.hypot(x - p.x, y - p.y);
+                            const margin = d - (testFrac + p.footprintFrac);
+                            if (margin < 0) overlap = true;
+                            minMargin = Math.min(minMargin, margin);
+                        }
+                        if (!overlap) {
+                            finalPos = { x, y }; finalFrac = testFrac; finalRem = item.rem * sizeMultiplier;
+                            break placementLoop;
+                        }
+                        if (minMargin > bestScore) { bestScore = minMargin; bestPos = { x, y }; }
+                    }
+                    if (sizeMultiplier <= minSizeMultiplier) {
+                        finalPos = bestPos; finalFrac = testFrac; finalRem = item.rem * sizeMultiplier;
+                        break;
+                    }
+                }
+                placed.push({ origIndex: item.origIndex, rem: finalRem, x: finalPos.x, y: finalPos.y, footprintFrac: finalFrac });
+            });
+
+            const result = new Array(count);
+            placed.forEach(p => { result[p.origIndex] = { x: p.x, y: p.y, rem: p.rem }; });
+            return result;
+        }
+
+        function renderCard(containerId, cardSymbols, layout, isSolution = false, commonSymbol = null) {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
 
             const rect = container.getBoundingClientRect();
-            const size = rect.width > 0 ? rect.width : 280;
+            const size = rect.width > 0 ? rect.width : 270;
             const cx = size / 2;
             const cy = size / 2;
-            const radius = size * 0.32;
-
-            const count = cardSymbols.length;
-
-            let baseFontSize = 2.5;
-            if (count >= 8 && count < 10) baseFontSize = 1.9;
-            else if (count >= 10 && count < 13) baseFontSize = 1.5;
-            else if (count >= 13) baseFontSize = 1.2;
-            const multipliedFontSize = baseFontSize * 1.75;
 
             cardSymbols.forEach((sym, i) => {
-                const { angle, rot } = angles[i];
-                const rad = angle * (Math.PI / 180);
-                const x = cx + radius * Math.cos(rad);
-                const y = cy + radius * Math.sin(rad);
+                const pos = layout[i];
+                const x = cx + pos.x * size;
+                const y = cy + pos.y * size;
 
                 const div = document.createElement('div');
                 div.className = 'sym';
-                div.style.fontSize = `${multipliedFontSize}rem`;
+
+                const isMatch = isSolution && sym === commonSymbol;
+                const rem = isMatch ? pos.rem * 1.2 : pos.rem;
+                div.style.fontSize = `${rem}rem`;
 
                 div.style.left = `${x}px`;
                 div.style.top = `${y}px`;
-                div.style.transform = `rotate(${rot}deg)`;
                 div.innerText = sym;
 
-                if (isSolution && sym === commonSymbol) {
+                if (isMatch) {
                     div.classList.add('highlight');
                 }
 
@@ -444,11 +563,11 @@ const cardsLvl3 = [
             currentCard1Idx = pair[0];
             currentCard2Idx = pair[1];
 
-            card1Angles = generateAngles(activeCards[currentCard1Idx].length);
-            card2Angles = generateAngles(activeCards[currentCard2Idx].length);
+            card1Layout = generateScatterLayout(activeCards[currentCard1Idx].length);
+            card2Layout = generateScatterLayout(activeCards[currentCard2Idx].length);
 
-            renderCard('card1', activeCards[currentCard1Idx], card1Angles);
-            renderCard('card2', activeCards[currentCard2Idx], card2Angles);
+            renderCard('card1', activeCards[currentCard1Idx], card1Layout);
+            renderCard('card2', activeCards[currentCard2Idx], card2Layout);
         }
 
         function showSolution() {
@@ -458,8 +577,8 @@ const cardsLvl3 = [
             const common = c1.find(s => c2.includes(s));
 
             if (common) {
-                renderCard('card1', c1, card1Angles, true, common);
-                renderCard('card2', c2, card2Angles, true, common);
+                renderCard('card1', c1, card1Layout, true, common);
+                renderCard('card2', c2, card2Layout, true, common);
             }
         }
 
@@ -468,9 +587,9 @@ const cardsLvl3 = [
         };
 
         window.onresize = function() {
-            if(card1Angles.length > 0 && card2Angles.length > 0) {
-                renderCard('card1', activeCards[currentCard1Idx], card1Angles);
-                renderCard('card2', activeCards[currentCard2Idx], card2Angles);
+            if (card1Layout.length > 0 && card2Layout.length > 0) {
+                renderCard('card1', activeCards[currentCard1Idx], card1Layout);
+                renderCard('card2', activeCards[currentCard2Idx], card2Layout);
             }
         };
     </script>

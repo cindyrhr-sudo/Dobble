@@ -20,12 +20,7 @@
             position: relative;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             margin: auto;
-        }
-        @media (min-height: 700px) and (min-width: 600px) {
-            .card {
-                width: 340px;
-                height: 340px;
-            }
+            flex-shrink: 0;
         }
         .sym {
             position: absolute;
@@ -51,10 +46,10 @@
         }
     </style>
 </head>
-<body class="bg-slate-100 h-screen w-screen flex flex-col justify-between p-3 overflow-hidden font-sans">
+<body class="bg-slate-100 h-screen w-screen flex flex-col p-3 overflow-hidden font-sans">
 
     <!-- Header & Level Selection -->
-    <header class="text-center pt-1">
+    <header class="text-center pt-1 flex-none">
         <h1 class="text-xl font-bold text-slate-800">Klassen-Dobble</h1>
         <div class="flex justify-center gap-2 mt-2">
             <button onclick="setLevel(1)" id="btn-lvl1" class="px-3 py-1 text-xs font-bold rounded-lg transition bg-indigo-600 text-white shadow">Level 1 (5 Symbole)</button>
@@ -63,18 +58,19 @@
         </div>
     </header>
 
-    <!-- Game Area: Stacked in portrait, side-by-side in landscape -->
-    <main class="game-container flex flex-col items-center justify-center gap-8 my-auto w-full max-w-5xl mx-auto">
-        <div class="flex flex-col items-center">
+    <!-- Game Area: nimmt den kompletten verfügbaren Platz zwischen Header und Footer
+         ein (flex-1 min-h-0), Kartengröße wird per JS an diesen Platz angepasst. -->
+    <main class="game-container flex flex-col items-center justify-center gap-6 flex-1 min-h-0 w-full max-w-5xl mx-auto">
+        <div class="flex flex-col items-center justify-center min-w-0 min-h-0">
             <div id="card1" class="card"></div>
         </div>
-        <div class="flex flex-col items-center">
+        <div class="flex flex-col items-center justify-center min-w-0 min-h-0">
             <div id="card2" class="card"></div>
         </div>
     </main>
 
     <!-- Controls at the bottom -->
-    <footer class="flex flex-col gap-3 items-center pb-2 pt-4 mt-2 w-full max-w-md mx-auto border-t border-slate-200">
+    <footer class="flex flex-col gap-3 items-center pb-2 pt-4 w-full max-w-md mx-auto border-t border-slate-200 flex-none">
         <div class="flex gap-4 w-full px-4">
             <button onclick="nextRound()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg text-base transition transform active:scale-95 cursor-pointer">
                 Nächste Karten 🔄
@@ -582,16 +578,63 @@ const cardsLvl3 = [
             }
         }
 
-        window.onload = function() {
-            nextRound();
-        };
+        // ------------------------------------------------------------
+        // Flexible Kartengröße: nutzt den tatsächlich verfügbaren Platz
+        // zwischen Header und Footer, statt fixer 270/340px-Stufen.
+        // MIN_CARD_PX entspricht REFERENCE_CARD_PX oben - wird die Karte
+        // kleiner gerendert, würde die verifizierte Kollisionsvermeidung
+        // (Abstände zwischen Symbolen) nicht mehr zuverlässig gelten,
+        // deshalb ist das eine harte Untergrenze.
+        // ------------------------------------------------------------
+        const MIN_CARD_PX = REFERENCE_CARD_PX; // 270 - Sicherheitsgrenze der Kollisionsvermeidung
+        const MAX_CARD_PX = 560; // verhindert unnötig riesige Karten auf sehr großen Bildschirmen
+        const CARD_SAFETY_MARGIN_PX = 10; // zusätzlicher Puffer, damit nichts exakt an Rand/Footer klebt
 
-        window.onresize = function() {
+        function isSideBySideLayout() {
+            return window.matchMedia('(orientation: landscape) and (min-width: 768px)').matches;
+        }
+
+        function updateCardSize() {
+            const main = document.querySelector('main.game-container');
+            const rect = main.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return; // noch nicht gerendert
+
+            const style = getComputedStyle(main);
+            const gapPx = parseFloat(style.rowGap || style.columnGap || style.gap || '0') || 0;
+            const sideBySide = isSideBySideLayout();
+
+            let cardSize;
+            if (sideBySide) {
+                const availWidthPerCard = (rect.width - gapPx) / 2;
+                cardSize = Math.min(availWidthPerCard, rect.height);
+            } else {
+                const availHeightPerCard = (rect.height - gapPx) / 2;
+                cardSize = Math.min(rect.width, availHeightPerCard);
+            }
+            cardSize -= CARD_SAFETY_MARGIN_PX;
+            cardSize = Math.max(MIN_CARD_PX, Math.min(MAX_CARD_PX, cardSize));
+
+            const c1 = document.getElementById('card1');
+            const c2 = document.getElementById('card2');
+            c1.style.width = c1.style.height = `${cardSize}px`;
+            c2.style.width = c2.style.height = `${cardSize}px`;
+        }
+
+        function handleResize() {
+            updateCardSize();
             if (card1Layout.length > 0 && card2Layout.length > 0) {
                 renderCard('card1', activeCards[currentCard1Idx], card1Layout);
                 renderCard('card2', activeCards[currentCard2Idx], card2Layout);
             }
+        }
+
+        window.onload = function() {
+            updateCardSize();
+            nextRound();
         };
+
+        window.onresize = handleResize;
+        window.addEventListener('orientationchange', () => setTimeout(handleResize, 50));
     </script>
 </body>
 </html>

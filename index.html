@@ -4,47 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Klassen-Dobble mit Leveln</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            touch-action: manipulation;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-        .card {
-            width: 270px;
-            height: 270px;
-            background: white;
-            border: 4px dashed #94a3b8;
-            border-radius: 50%;
-            position: relative;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            margin: auto;
-            flex-shrink: 0;
-        }
-        .sym {
-            position: absolute;
-            line-height: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transform: translate(-50%, -50%);
-        }
-        .highlight {
-            background-color: rgba(239, 68, 68, 0.2);
-            border: 4px solid #ef4444;
-            border-radius: 50%;
-            box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
-            padding: 4px;
-            z-index: 20;
-        }
-        /* Landscape layout adjustments */
-        @media (orientation: landscape) and (min-width: 768px) {
-            .game-container {
-                flex-direction: row !important;
-            }
-        }
-    </style>
+<link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Klassen-Dobble">
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-slate-100 h-screen w-screen flex flex-col p-3 overflow-hidden font-sans">
 
@@ -635,6 +601,18 @@ const cardsLvl3 = [
 
         window.onresize = handleResize;
         window.addEventListener('orientationchange', () => setTimeout(handleResize, 50));
+    </script>
+
+    <script>
+        // Service Worker registrieren, damit die App nach dem ersten (Online-)Aufruf
+        // auch offline funktioniert (z.B. nach "Zum Home-Bildschirm hinzufügen").
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js').catch(err => {
+                    console.error('Service-Worker-Registrierung fehlgeschlagen:', err);
+                });
+            });
+        }
     </script>
 </body>
 </html>
